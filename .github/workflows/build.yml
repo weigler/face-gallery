@@ -1,0 +1,50 @@
+name: Build Face Index
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      album:
+        description: "Nome do álbum"
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - run: npm install
+
+      - name: Baixar modelos
+        run: |
+          mkdir -p models
+          wget -P models https://github.com/justadudewhohacks/face-api.js/raw/master/weights/ssd_mobilenetv1_model-weights_manifest.json
+          wget -P models https://github.com/justadudewhohacks/face-api.js/raw/master/weights/ssd_mobilenetv1_model-shard1
+          wget -P models https://github.com/justadudewhohacks/face-api.js/raw/master/weights/ssd_mobilenetv1_model-shard2
+          wget -P models https://github.com/justadudewhohacks/face-api.js/raw/master/weights/face_landmark_68_model-weights_manifest.json
+          wget -P models https://github.com/justadudewhohacks/face-api.js/raw/master/weights/face_landmark_68_model-shard1
+          wget -P models https://github.com/justadudewhohacks/face-api.js/raw/master/weights/face_recognition_model-weights_manifest.json
+          wget -P models https://github.com/justadudewhohacks/face-api.js/raw/master/weights/face_recognition_model-shard1
+          wget -P models https://github.com/justadudewhohacks/face-api.js/raw/master/weights/face_recognition_model-shard2
+
+      - name: Rodar script
+        run: node index.js
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          ALBUM: ${{ github.event.inputs.album }}
+
+      - name: Commit JSON
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@github.com"
+          git add *.json
+          git commit -m "update album" || echo "no changes"
+          git push
