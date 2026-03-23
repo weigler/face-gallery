@@ -1,0 +1,9 @@
+{
+  "name": "Face-AI",
+  "version": "2.0.0",
+  "dependencies": {
+  "face-api.js": "^0.22.2",
+  "canvas": "^2.11.2",
+  "node-fetch": "^2.6.7"
+  }
+}
