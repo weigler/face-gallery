@@ -1,2 +1,0 @@
-# face-gallery
-Face Gallery
