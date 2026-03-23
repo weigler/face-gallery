@@ -11,8 +11,8 @@ const ALBUM = process.env.ALBUM;
 
 const ALBUMS = {
   RPM2406: "1-LyABC7nFLJ9M1j3k1iZHT0LxAYoqje2",
-  RPM2407: "1-It0lAedNjHY4lS0nUU1EXxIgpLn3L_Z"
-  Gisela60: "1Wz5I-D-K7wLwP9ExMUdawXkkAK-i2KXT"
+  RPM2407: "1-It0lAedNjHY4lS0nUU1EXxIgpLn3L_Z",
+  GISELA60: "1Wz5I-D-K7wLwP9ExMUdawXkkAK-i2KXT",
 };
 
 const FOLDER_ID = ALBUMS[ALBUM];
