@@ -10,8 +10,8 @@ const API_KEY = process.env.API_KEY;
 const ALBUM = process.env.ALBUM;
 
 const ALBUMS = {
-  casamento: "ID_PASTA_1",
-  formatura: "ID_PASTA_2"
+  RPM2406: "1-LyABC7nFLJ9M1j3k1iZHT0LxAYoqje2",
+  RPM2407: "1-It0lAedNjHY4lS0nUU1EXxIgpLn3L_Z"
 };
 
 const FOLDER_ID = ALBUMS[ALBUM];
