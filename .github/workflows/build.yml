@@ -38,7 +38,7 @@ jobs:
       - name: Rodar script
         run: node index.js
         env:
-          API_KEY: API_KEY: ${{ secrets.API_KEY }}
+          API_KEY: ${{ secrets.API_KEY }}
           ALBUM: ${{ github.event.inputs.album }}
 
       - name: Commit JSON
