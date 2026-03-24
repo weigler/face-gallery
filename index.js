@@ -92,15 +92,21 @@ function clusterFaces(data) {
 
   const files = await getDriveFiles();
 
-  let existing = [];
-  const fileName = `${ALBUM}.json`;
+  let existingData = { photos: [], clusters: [] };
 
   if (fs.existsSync(fileName)) {
-    existing = JSON.parse(fs.readFileSync(fileName));
-  }
+  const raw = JSON.parse(fs.readFileSync(fileName));
 
-  const processed = new Set(existing.map(f => f.id));
-  const results = [...existing];
+  // 🔥 compatibilidade com formato antigo
+  if (Array.isArray(raw)) {
+    existingData.photos = raw;
+  } else {
+    existingData = raw;
+  }
+}
+
+  const processed = new Set(existingData.photos.map(f => f.id));
+  const results = [...existingData.photos];
 
   for (let file of files) {
 
