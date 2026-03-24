@@ -41,10 +41,15 @@ jobs:
           API_KEY: ${{ secrets.API_KEY }}
           ALBUM: ${{ github.event.inputs.album }}
 
+
       - name: Commit JSON
         run: |
           git config user.name "bot"
           git config user.email "bot@github.com"
+
+          git pull origin main --rebase
+
           git add *.json
           git commit -m "update album" || echo "no changes"
-          git push
+
+          git push origin main
