@@ -61,23 +61,38 @@ async function getDriveFiles() {
 }
 
 // detectar rosto
-async function getDescriptor(url) {
+async function getDescriptors(url) {
   try {
     const img = await canvas.loadImage(url);
 
     const c = canvas.createCanvas(512, 512);
     const ctx = c.getContext('2d');
-    ctx.drawImage(img, 0, 0, 512, 512);
 
-    const det = await faceapi
-      .detectSingleFace(c)
+    const size = Math.min(img.width, img.height);
+
+    ctx.drawImage(
+      img,
+      (img.width - size) / 2,
+      (img.height - size) / 2,
+      size,
+      size,
+      0,
+      0,
+      512,
+      512
+    );
+
+    const detections = await faceapi
+      .detectAllFaces(c)
       .withFaceLandmarks()
-      .withFaceDescriptor();
+      .withFaceDescriptors();
 
-    return det ? Array.from(det.descriptor) : null;
+    if (!detections.length) return [];
+
+    return detections.map(d => Array.from(d.descriptor));
 
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -139,16 +154,17 @@ function clusterFaces(data) {
 
     const url = `https://drive.google.com/thumbnail?id=${file.id}&sz=w800`;
 
-    const descriptor = await getDescriptor(url);
+    const descriptors = await getDescriptors(url);
 
-    if (!descriptor) continue;
+       if (!descriptors.length) continue;
 
-    results.push({
-      id: file.id,
-      name: file.name,
-      descriptor
-    });
-  }
+      for (const descriptor of descriptors) {
+        results.push({
+          id: file.id,
+          name: file.name,
+          descriptor
+      });
+}
 
   // 🔥 gerar clusters
   const clusters = clusterFaces(results);
