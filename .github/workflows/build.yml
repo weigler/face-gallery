@@ -9,8 +9,6 @@ on:
       album:
         description: "Nome do álbum"
         required: true
-  schedule:
-    - cron: "* * */07 * *"
 
 jobs:
   build:
