@@ -1,0 +1,46 @@
+name: Build Face Index
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      album:
+        description: "Nome do álbum"
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 🔥 PYTHON (novo)
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.10
+
+      - name: Install deps
+        run: pip install insightface onnxruntime pillow requests numpy
+
+      # 🔥 Script novo
+      - name: Rodar script Python
+        run: python generate_embeddings.py
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          ALBUM: ${{ github.event.inputs.album }}
+
+      - name: Commit JSON
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@github.com"
+
+          git pull origin main --rebase || echo "no pull"
+
+          git add *.json
+          git commit -m "update album" || echo "no changes"
+
+          git push origin main
