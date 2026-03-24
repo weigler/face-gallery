@@ -17,6 +17,11 @@ const ALBUMS = {
 };
 
 const FOLDER_ID = ALBUMS[ALBUM];
+
+if (!FOLDER_ID) {
+  throw new Error("Álbum inválido: " + ALBUM);
+}
+
 const MODEL_PATH = './models';
 
 // carregar modelos
@@ -92,8 +97,10 @@ function clusterFaces(data) {
 
   const files = await getDriveFiles();
 
+  const fileName = `${ALBUM}.json`;
+  
   let existingData = { photos: [], clusters: [] };
-
+  
   if (fs.existsSync(fileName)) {
   const raw = JSON.parse(fs.readFileSync(fileName));
 
