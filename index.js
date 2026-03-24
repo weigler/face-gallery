@@ -44,9 +44,9 @@ async function getDescriptor(url) {
   try {
     const img = await canvas.loadImage(url);
 
-    const c = canvas.createCanvas(320, 320);
+    const c = canvas.createCanvas(512, 512);
     const ctx = c.getContext('2d');
-    ctx.drawImage(img, 0, 0, 320, 320);
+    ctx.drawImage(img, 0, 0, 512, 512);
 
     const det = await faceapi
       .detectSingleFace(c)
@@ -73,7 +73,7 @@ function clusterFaces(data) {
         group[0].descriptor
       );
 
-      if (dist < 0.45) {
+      if (dist < 0.5) {
         group.push(item);
         added = true;
         break;
