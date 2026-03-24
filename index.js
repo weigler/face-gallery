@@ -87,6 +87,11 @@ async function getDescriptors(url) {
       .withFaceLandmarks()
       .withFaceDescriptors();
 
+    detections.sort((a, b) =>
+      (b.detection.box.width * b.detection.box.height) -
+      (a.detection.box.width * a.detection.box.height)
+    );
+
     if (!detections.length) return [];
 
     return detections.map(d => Array.from(d.descriptor));
