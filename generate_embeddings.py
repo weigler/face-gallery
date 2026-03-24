@@ -81,7 +81,7 @@ def cluster(data):
     return groups
 
 # MAIN
-file_name = f"{ALBUM}.json"
+file_name = f"{ALBUM}_py.json"
 
 existing = {"photos": [], "clusters": []}
 
