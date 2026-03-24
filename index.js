@@ -73,7 +73,7 @@ function clusterFaces(data) {
         group[0].descriptor
       );
 
-      if (dist < 0.5) {
+      if (dist < 0.45) {
         group.push(item);
         added = true;
         break;
