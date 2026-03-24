@@ -76,6 +76,9 @@ def get_drive_files():
 
     return files
 
+import cv2
+import numpy as np
+
 def get_embedding(url):
     try:
         response = requests.get(url, timeout=10)
@@ -86,12 +89,15 @@ def get_embedding(url):
 
         img = Image.open(BytesIO(response.content)).convert("RGB")
 
+        # 🔥 CONVERSÃO CORRETA (ESSA É A CORREÇÃO)
+        img = np.array(img)
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
         faces = app.get(img)
 
         if not faces:
             return None
 
-        # pega o rosto com maior score
         face = sorted(faces, key=lambda x: x.det_score, reverse=True)[0]
 
         emb = face.embedding
