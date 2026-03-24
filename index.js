@@ -41,11 +41,13 @@ async function getDriveFiles() {
 
   const res = await fetch(url);
   const data = await res.json();
-  return data.files || [];
-}
 
-if (!data.files) {
-  console.log("Erro API:", data);
+  // 🔥 DEBUG CORRETO (aqui sim funciona)
+  if (!data.files) {
+    console.log("Erro API:", data);
+  }
+
+  return data.files || [];
 }
 
 // detectar rosto
