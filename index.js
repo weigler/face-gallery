@@ -44,6 +44,10 @@ async function getDriveFiles() {
   return data.files || [];
 }
 
+if (!data.files) {
+  console.log("Erro API:", data);
+}
+
 // detectar rosto
 async function getDescriptor(url) {
   try {
