@@ -3,6 +3,7 @@ import json
 import requests
 import numpy as np
 import urllib.parse
+import cv2
 from PIL import Image
 from io import BytesIO
 from insightface.app import FaceAnalysis
@@ -37,16 +38,13 @@ if not FOLDER_ID:
     raise Exception(f"Álbum inválido: {ALBUM}")
 
 print("📁 Álbum:", ALBUM)
-print("📂 Folder ID:", FOLDER_ID)
 
 # =============================
-# MODELO (InsightFace)
+# MODELO
 # =============================
 
-print("🧠 Carregando modelo...")
 app = FaceAnalysis(name="buffalo_l")
 app.prepare(ctx_id=0)
-print("✅ Modelo carregado")
 
 # =============================
 # HELPERS
@@ -61,14 +59,10 @@ def get_drive_files():
 
     url = f"https://www.googleapis.com/drive/v3/files?q={encoded_query}&fields=files(id,name)&pageSize=1000&key={API_KEY}"
 
-    print("\n🌐 Buscando arquivos no Drive...")
-    print("🔎 Query:", query)
-
     res = requests.get(url).json()
 
     if "error" in res:
-        print("❌ ERRO API:")
-        print(res)
+        print("❌ ERRO API:", res)
         return []
 
     files = res.get("files", [])
@@ -76,41 +70,44 @@ def get_drive_files():
 
     return files
 
-import cv2
-import numpy as np
-
-def get_embedding(url):
+def get_embeddings(url):
     try:
         response = requests.get(url, timeout=10)
 
         if response.status_code != 200:
-            print("⚠️ Erro ao baixar imagem:", url)
-            return None
+            return []
 
         img = Image.open(BytesIO(response.content)).convert("RGB")
-
-        # 🔥 CONVERSÃO CORRETA (ESSA É A CORREÇÃO)
         img = np.array(img)
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
         faces = app.get(img)
 
         if not faces:
-            return None
+            return []
 
-        face = sorted(faces, key=lambda x: x.det_score, reverse=True)[0]
+        embeddings = []
 
-        emb = face.embedding
+        for face in faces:
+            emb = face.embedding
 
-        return normalize(emb)
+            # 🔥 FLIP (melhora MUITO)
+            img_flip = np.fliplr(img)
+            faces_flip = app.get(img_flip)
+
+            if faces_flip:
+                emb_flip = faces_flip[0].embedding
+                emb = (emb + emb_flip) / 2
+
+            embeddings.append(normalize(emb))
+
+        return embeddings
 
     except Exception as e:
-        print("⚠️ Erro processamento:", e)
-        return None
+        print("⚠️ Erro:", e)
+        return []
 
 def cluster_faces(data):
-    print("\n🧠 Gerando clusters...")
-
     groups = []
 
     for item in data:
@@ -128,7 +125,7 @@ def cluster_faces(data):
         if not added:
             groups.append([item])
 
-    print(f"👥 Total clusters: {len(groups)}")
+    print(f"👥 Clusters: {len(groups)}")
     return groups
 
 # =============================
@@ -140,54 +137,45 @@ file_name = f"{ALBUM}_py.json"
 existing = {"photos": [], "clusters": []}
 
 if os.path.exists(file_name):
-    print("\n📦 Carregando JSON existente...")
-    with open(file_name) as f:
-        existing = json.load(f)
+    existing = json.load(open(file_name))
 
-processed_ids = set(p["id"] for p in existing["photos"])
+processed = set(p["id"] for p in existing["photos"])
 results = existing["photos"]
 
 files = get_drive_files()
 
-if not files:
-    print("\n❌ Nenhuma imagem encontrada. Verifique:")
-    print("- Pasta pública")
-    print("- API_KEY válida")
-    print("- Folder ID correto")
-    exit(1)
-
-count_new = 0
+count = 0
 
 for f in files:
-    if f["id"] in processed_ids:
+    if f["id"] in processed:
         continue
 
-    print("🆕 Nova imagem:", f["name"])
+    print("🆕", f["name"])
 
     url = f"https://drive.google.com/thumbnail?id={f['id']}&sz=w800"
 
-    emb = get_embedding(url)
+    embs = get_embeddings(url)
 
-    if not emb:
+    if not embs:
         continue
 
-    results.append({
-        "id": f["id"],
-        "name": f["name"],
-        "descriptor": emb
-    })
+    for emb in embs:
+        results.append({
+            "id": f["id"],
+            "name": f["name"],
+            "descriptor": emb
+        })
 
-    count_new += 1
+    count += 1
 
-print(f"\n✅ Novas processadas: {count_new}")
-print(f"📊 Total geral: {len(results)}")
+print("✅ Novas:", count)
+print("📊 Total:", len(results))
 
 clusters = cluster_faces(results)
 
-with open(file_name, "w") as f:
-    json.dump({
-        "photos": results,
-        "clusters": clusters
-    }, f)
+json.dump({
+    "photos": results,
+    "clusters": clusters
+}, open(file_name, "w"))
 
-print(f"\n💾 Arquivo salvo: {file_name}")
+print("💾 Salvo:", file_name)
