@@ -1,7 +1,9 @@
-// Backend do TensorFlow precisa ser carregado ANTES do face-api.js
-// Isso elimina o aviso de "slow CPU backend" e acelera bastante o processamento.
-require('@tensorflow/tfjs-node');
-
+// NOTA: @tensorflow/tfjs-node NÃO é usado aqui de propósito.
+// face-api.js@0.22.2 embute uma versão antiga do @tensorflow/tfjs-core.
+// Carregar o tfjs-node (versão 4.x) registra um tfjs-core incompatível
+// e quebra em runtime (kernel "forwardFunc_1 is not a function").
+// O aviso "slow CPU backend" no log é inofensivo — só indica que
+// está usando o backend puro em JS, que é mais lento mas funciona.
 const faceapi = require('face-api.js');
 const canvas = require('canvas');
 const fetch = require('node-fetch');
