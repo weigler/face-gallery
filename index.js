@@ -170,6 +170,7 @@ function clusterFaces(data) {
           name: file.name,
           descriptor
       });
+    }
 }
 
   // 🔥 gerar clusters
