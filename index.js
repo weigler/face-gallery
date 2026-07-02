@@ -166,7 +166,9 @@ async function getDescriptors(url, fileName) {
     );
 
     const detections = await faceapi
-      .detectAllFaces(c)
+      // minConfidence padrão é 0.5; reduzido para pegar mais rostos
+      // de lado / em ângulo / parcialmente cobertos nas fotos do álbum.
+      .detectAllFaces(c, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
       .withFaceLandmarks()
       .withFaceDescriptors();
 
@@ -215,6 +217,14 @@ function clusterFaces(data) {
 }
 
 // ---------------------------------------------------------------------------
+// Persistência incremental
+// ---------------------------------------------------------------------------
+
+function persist(fileName, photos, clusters) {
+  fs.writeFileSync(fileName, JSON.stringify({ photos, clusters }));
+}
+
+// ---------------------------------------------------------------------------
 // MAIN
 // ---------------------------------------------------------------------------
 
@@ -248,11 +258,35 @@ function clusterFaces(data) {
   const processed = new Set(existingData.photos.map((f) => f.id));
   const results = [...existingData.photos];
 
+  // ── Salva o que já foi processado se o runner mandar encerrar
+  // (timeout, cancelamento manual, etc.). O GitHub Actions envia SIGTERM
+  // alguns segundos antes de matar o processo, então isso dá tempo de
+  // gravar o arquivo antes de perder o progresso.
+  let exiting = false;
+  function gracefulExit(signal) {
+    if (exiting) return; // evita salvar 2x se o sinal chegar de novo
+    exiting = true;
+    log(`⚠️  Sinal ${signal} recebido (provável timeout/cancelamento) — salvando progresso...`);
+    try {
+      // Mantém os clusters antigos aqui: recalcular do zero pode ser lento
+      // e o objetivo agora é só não perder os descritores já processados.
+      persist(fileName, results, existingData.clusters || []);
+      log(`💾 Progresso salvo: ${results.length} descritores gravados em ${fileName}`);
+    } catch (err) {
+      log(`❌ Falha ao salvar no encerramento: ${err.message}`);
+    }
+    process.exit(0);
+  }
+  process.on('SIGTERM', () => gracefulExit('SIGTERM'));
+  process.on('SIGINT', () => gracefulExit('SIGINT'));
+
   let novas = 0;
   let ignoradas = 0;
   let comErro = 0;
+  let sinceLastSave = 0;
 
   const HEARTBEAT_EVERY = 50; // frequência do log de progresso geral
+  const SAVE_EVERY = 15;      // frequência do salvamento em disco (fotos novas)
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
@@ -277,6 +311,7 @@ function clusterFaces(data) {
           });
         }
         novas++;
+        sinceLastSave++;
       }
     }
 
@@ -288,18 +323,19 @@ function clusterFaces(data) {
           `(${novas} novas, ${ignoradas} já existentes, ${comErro} sem rosto) —`
       );
     }
+
+    // Salvamento incremental: garante que o commit no fim do workflow
+    // (mesmo que o job seja interrompido) pegue o progresso mais recente.
+    if (sinceLastSave >= SAVE_EVERY) {
+      persist(fileName, results, existingData.clusters || []);
+      log(`💾 Progresso salvo (${results.length} descritores até agora)`);
+      sinceLastSave = 0;
+    }
   }
 
   log('🔗 Gerando clusters...');
   const clusters = clusterFaces(results);
-
-  fs.writeFileSync(
-    fileName,
-    JSON.stringify({
-      photos: results,
-      clusters: clusters,
-    })
-  );
+  persist(fileName, results, clusters);
 
   const elapsed = formatDuration(Date.now() - startTime);
 
