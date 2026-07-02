@@ -1,3 +1,7 @@
+// Backend do TensorFlow precisa ser carregado ANTES do face-api.js
+// Isso elimina o aviso de "slow CPU backend" e acelera bastante o processamento.
+require('@tensorflow/tfjs-node');
+
 const faceapi = require('face-api.js');
 const canvas = require('canvas');
 const fetch = require('node-fetch');
@@ -8,9 +12,6 @@ faceapi.env.monkeyPatch({ Canvas, Image, ImageData, fetch });
 
 const API_KEY = process.env.API_KEY;
 const ALBUM = process.env.ALBUM;
-
-console.log("ALBUM:", ALBUM);
-console.log("API_KEY:", API_KEY ? API_KEY.substring(0, 10) + "..." : "NÃO DEFINIDA");
 
 const ALBUMS = {
   RPM2406: "1-LyABC7nFLJ9M1j3k1iZHT0LxAYoqje2",
@@ -38,39 +39,110 @@ if (!FOLDER_ID) {
 
 const MODEL_PATH = './models';
 
-// carregar modelos
+// ---------------------------------------------------------------------------
+// Utilidades
+// ---------------------------------------------------------------------------
+
+function log(...args) {
+  const ts = new Date().toISOString().substring(11, 19);
+  console.log(`[${ts}]`, ...args);
+}
+
+function formatDuration(ms) {
+  const s = Math.floor(ms / 1000);
+  const min = Math.floor(s / 60);
+  const sec = s % 60;
+  return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
+// Modelos
+// ---------------------------------------------------------------------------
+
 async function loadModels() {
   await faceapi.nets.ssdMobilenetv1.loadFromDisk(MODEL_PATH);
   await faceapi.nets.faceLandmark68Net.loadFromDisk(MODEL_PATH);
   await faceapi.nets.faceRecognitionNet.loadFromDisk(MODEL_PATH);
 }
 
-// buscar arquivos
-async function getDriveFiles() {
-  const query = encodeURIComponent(
-    `'${FOLDER_ID}' in parents and mimeType contains 'image/' and trashed=false`
-  );
+// ---------------------------------------------------------------------------
+// Google Drive: listagem com cache em memória + retry
+// ---------------------------------------------------------------------------
 
-  const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=1000&key=${API_KEY}`;
+// Evita reconsultar a mesma pasta mais de uma vez durante a execução
+// (ex.: se um atalho do Drive apontar para uma pasta já visitada).
+const driveCache = new Map();
+let apiCalls = 0;
 
-  console.log("Consultando pasta:", FOLDER_ID);
-  console.log("URL:", url.replace(API_KEY, "***"));
-  
-  const res = await fetch(url);
-  const data = await res.json();
-
-  console.log(JSON.stringify(data, null, 2));
-
-  // 🔥 DEBUG CORRETO (aqui sim funciona)
-  if (!data.files) {
-    console.log("Erro API:", data);
+async function driveListChildren(folderId, retries = 3) {
+  if (driveCache.has(folderId)) {
+    return driveCache.get(folderId);
   }
 
-  return data.files || [];
+  const query = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+  const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType)&pageSize=1000&key=${API_KEY}`;
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    apiCalls++;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.error) {
+        throw new Error(data.error.message || JSON.stringify(data.error));
+      }
+
+      const children = data.files || [];
+      const folders = children.filter(
+        (f) => f.mimeType === 'application/vnd.google-apps.folder'
+      );
+      const files = children.filter((f) => f.mimeType.startsWith('image/'));
+
+      const result = { folders, files };
+      driveCache.set(folderId, result);
+      return result;
+    } catch (err) {
+      log(`⚠️  Erro ao listar pasta ${folderId} (tentativa ${attempt}/${retries}): ${err.message}`);
+      if (attempt === retries) {
+        log(`❌ Desistindo da pasta ${folderId} após ${retries} tentativas.`);
+        return { folders: [], files: [] };
+      }
+      await sleep(1000 * attempt);
+    }
+  }
 }
 
-// detectar rosto
-async function getDescriptors(url) {
+// Percorre recursivamente todas as subpastas a partir de uma pasta raiz
+async function walkDrive(folderId, folderName, parentPath = []) {
+  const currentPath = parentPath.concat(folderName).join('/');
+  log(`📁 Lendo pasta: ${currentPath}`);
+
+  const { folders, files } = await driveListChildren(folderId);
+  log(`   → ${files.length} imagem(ns), ${folders.length} subpasta(s)`);
+
+  let allFiles = files.map((f) => ({
+    id: f.id,
+    name: f.name,
+    folder: currentPath,
+  }));
+
+  for (const sub of folders) {
+    const subFiles = await walkDrive(sub.id, sub.name, parentPath.concat(folderName));
+    allFiles = allFiles.concat(subFiles);
+  }
+
+  return allFiles;
+}
+
+// ---------------------------------------------------------------------------
+// Detecção de rosto(s)
+// ---------------------------------------------------------------------------
+
+async function getDescriptors(url, fileName) {
   try {
     const img = await canvas.loadImage(url);
 
@@ -96,32 +168,36 @@ async function getDescriptors(url) {
       .withFaceLandmarks()
       .withFaceDescriptors();
 
-    detections.sort((a, b) =>
-      (b.detection.box.width * b.detection.box.height) -
-      (a.detection.box.width * a.detection.box.height)
+    detections.sort(
+      (a, b) =>
+        b.detection.box.width * b.detection.box.height -
+        a.detection.box.width * a.detection.box.height
     );
 
-    if (!detections.length) return [];
+    if (!detections.length) {
+      log(`   ⚠️  Nenhum rosto detectado em: ${fileName}`);
+      return [];
+    }
 
-    return detections.map(d => Array.from(d.descriptor));
-
-  } catch {
+    return detections.map((d) => Array.from(d.descriptor));
+  } catch (err) {
+    log(`   ❌ Erro ao processar "${fileName}": ${err.message}`);
     return [];
   }
 }
 
-// 🔥 CLUSTER SIMPLES (agrupamento)
+// ---------------------------------------------------------------------------
+// Clusterização simples
+// ---------------------------------------------------------------------------
+
 function clusterFaces(data) {
   const groups = [];
 
-  data.forEach(item => {
+  data.forEach((item) => {
     let added = false;
 
-    for (let group of groups) {
-      const dist = faceapi.euclideanDistance(
-        item.descriptor,
-        group[0].descriptor
-      );
+    for (const group of groups) {
+      const dist = faceapi.euclideanDistance(item.descriptor, group[0].descriptor);
 
       if (dist < 0.45) {
         group.push(item);
@@ -136,59 +212,101 @@ function clusterFaces(data) {
   return groups;
 }
 
+// ---------------------------------------------------------------------------
 // MAIN
-(async () => {
-  await loadModels();
+// ---------------------------------------------------------------------------
 
-  const files = await getDriveFiles();
+(async () => {
+  const startTime = Date.now();
+  log(`🚀 Iniciando processamento do álbum "${ALBUM}"`);
+  log(`API_KEY: ${API_KEY ? API_KEY.substring(0, 10) + '...' : 'NÃO DEFINIDA'}`);
+
+  await loadModels();
+  log('✅ Modelos carregados');
+
+  const files = await walkDrive(FOLDER_ID, ALBUM);
+  log(`📸 Total de imagens encontradas (todas as subpastas): ${files.length}`);
+  log(`🌐 Chamadas à API do Drive: ${apiCalls}`);
 
   const fileName = `${ALBUM}.json`;
-  
+
   let existingData = { photos: [], clusters: [] };
-  
+
   if (fs.existsSync(fileName)) {
-  const raw = JSON.parse(fs.readFileSync(fileName));
+    const raw = JSON.parse(fs.readFileSync(fileName));
 
-  // 🔥 compatibilidade com formato antigo
-  if (Array.isArray(raw)) {
-    existingData.photos = raw;
-  } else {
-    existingData = raw;
+    // Compatibilidade com o formato antigo (array simples de fotos)
+    if (Array.isArray(raw)) {
+      existingData.photos = raw;
+    } else {
+      existingData = raw;
+    }
   }
-}
 
-  const processed = new Set(existingData.photos.map(f => f.id));
+  const processed = new Set(existingData.photos.map((f) => f.id));
   const results = [...existingData.photos];
 
-  for (let file of files) {
+  let novas = 0;
+  let ignoradas = 0;
+  let comErro = 0;
 
-    if (processed.has(file.id)) continue;
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
 
-    console.log("Nova:", file.name);
+    if (processed.has(file.id)) {
+      ignoradas++;
+      continue;
+    }
+
+    log(`(${i + 1}/${files.length}) Nova imagem: "${file.name}" [${file.folder}]`);
 
     const url = `https://drive.google.com/thumbnail?id=${file.id}&sz=w800`;
+    const descriptors = await getDescriptors(url, file.name);
 
-    const descriptors = await getDescriptors(url);
+    if (!descriptors.length) {
+      comErro++;
+      continue;
+    }
 
-       if (!descriptors.length) continue;
-
-      for (const descriptor of descriptors) {
-        results.push({
-          id: file.id,
-          name: file.name,
-          descriptor
+    for (const descriptor of descriptors) {
+      results.push({
+        id: file.id,
+        name: file.name,
+        folder: file.folder,
+        descriptor,
       });
     }
-}
 
-  // 🔥 gerar clusters
+    novas++;
+  }
+
+  log('🔗 Gerando clusters...');
   const clusters = clusterFaces(results);
 
-  fs.writeFileSync(fileName, JSON.stringify({
-    photos: results,
-    clusters: clusters
-  }));
+  fs.writeFileSync(
+    fileName,
+    JSON.stringify({
+      photos: results,
+      clusters: clusters,
+    })
+  );
 
-  console.log("Final:", results.length);
+  const elapsed = formatDuration(Date.now() - startTime);
 
-})();
+  log('========================================');
+  log('              RESUMO FINAL              ');
+  log('========================================');
+  log(`Álbum:                     ${ALBUM}`);
+  log(`Imagens encontradas:       ${files.length}`);
+  log(`Fotos novas processadas:   ${novas}`);
+  log(`Fotos já existentes:       ${ignoradas}`);
+  log(`Fotos sem rosto/com erro:  ${comErro}`);
+  log(`Total de descritores:      ${results.length}`);
+  log(`Clusters gerados:          ${clusters.length}`);
+  log(`Chamadas à API do Drive:   ${apiCalls}`);
+  log(`Tempo total:               ${elapsed}`);
+  log('========================================');
+})().catch((err) => {
+  console.error('❌ Erro fatal:', err);
+  process.exit(1);
+});
