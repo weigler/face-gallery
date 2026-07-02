@@ -9,6 +9,9 @@ faceapi.env.monkeyPatch({ Canvas, Image, ImageData, fetch });
 const API_KEY = process.env.API_KEY;
 const ALBUM = process.env.ALBUM;
 
+console.log("ALBUM:", ALBUM);
+console.log("API_KEY:", API_KEY ? API_KEY.substring(0, 10) + "..." : "NÃO DEFINIDA");
+
 const ALBUMS = {
   RPM2406: "1-LyABC7nFLJ9M1j3k1iZHT0LxAYoqje2",
   RPM2407: "1-It0lAedNjHY4lS0nUU1EXxIgpLn3L_Z",
@@ -50,8 +53,13 @@ async function getDriveFiles() {
 
   const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=1000&key=${API_KEY}`;
 
+  console.log("Consultando pasta:", FOLDER_ID);
+  console.log("URL:", url.replace(API_KEY, "***"));
+  
   const res = await fetch(url);
   const data = await res.json();
+
+  console.log(JSON.stringify(data, null, 2));
 
   // 🔥 DEBUG CORRETO (aqui sim funciona)
   if (!data.files) {
