@@ -252,34 +252,42 @@ function clusterFaces(data) {
   let ignoradas = 0;
   let comErro = 0;
 
+  const HEARTBEAT_EVERY = 50; // frequência do log de progresso geral
+
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
 
     if (processed.has(file.id)) {
       ignoradas++;
-      continue;
+    } else {
+      log(`(${i + 1}/${files.length}) Nova imagem: "${file.name}" [${file.folder}]`);
+
+      const url = `https://drive.google.com/thumbnail?id=${file.id}&sz=w800`;
+      const descriptors = await getDescriptors(url, file.name);
+
+      if (!descriptors.length) {
+        comErro++;
+      } else {
+        for (const descriptor of descriptors) {
+          results.push({
+            id: file.id,
+            name: file.name,
+            folder: file.folder,
+            descriptor,
+          });
+        }
+        novas++;
+      }
     }
 
-    log(`(${i + 1}/${files.length}) Nova imagem: "${file.name}" [${file.folder}]`);
-
-    const url = `https://drive.google.com/thumbnail?id=${file.id}&sz=w800`;
-    const descriptors = await getDescriptors(url, file.name);
-
-    if (!descriptors.length) {
-      comErro++;
-      continue;
+    // Progresso geral, mesmo quando a maioria das fotos é pulada em silêncio
+    const isLast = i === files.length - 1;
+    if ((i + 1) % HEARTBEAT_EVERY === 0 || isLast) {
+      log(
+        `— progresso: ${i + 1}/${files.length} verificadas ` +
+          `(${novas} novas, ${ignoradas} já existentes, ${comErro} sem rosto) —`
+      );
     }
-
-    for (const descriptor of descriptors) {
-      results.push({
-        id: file.id,
-        name: file.name,
-        folder: file.folder,
-        descriptor,
-      });
-    }
-
-    novas++;
   }
 
   log('🔗 Gerando clusters...');
