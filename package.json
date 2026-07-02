@@ -1,9 +1,13 @@
 {
   "name": "Face-AI",
-  "version": "2.0.0",
+  "version": "3.0.0",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-  "face-api.js": "^0.22.2",
-  "canvas": "^2.11.2",
-  "node-fetch": "^2.6.7"
+    "@tensorflow/tfjs-node": "^4.20.0",
+    "face-api.js": "^0.22.2",
+    "canvas": "^2.11.2",
+    "node-fetch": "^2.6.7"
   }
 }
